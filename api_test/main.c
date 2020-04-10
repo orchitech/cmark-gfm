@@ -1568,6 +1568,53 @@ static void ext_source_pos(test_batch_runner *runner) {
   cmark_parser_free(parser);
 }
 
+static void ext_source_pos_corners(test_batch_runner *runner) {
+  static const char *extensions[3] = {
+    "strikethrough",
+    "table",
+    "autolink",
+  };
+
+  // a paragraph inserted by the table extension
+  static const char markdown[] =
+    "| paragraph |\n" // +6
+    "| header |\n" //+3
+    "| --- |\n";
+
+  int options = CMARK_OPT_DEFAULT | CMARK_OPT_SOURCEPOS;
+  cmark_parser *parser = cmark_parser_new(options);
+
+  for (int i = 0; i < (int)(sizeof(extensions) / sizeof(*extensions)); ++i) {
+    cmark_syntax_extension *ext = cmark_find_syntax_extension(extensions[i]);
+    cmark_parser_attach_syntax_extension(parser, ext);
+  }
+
+  cmark_parser_feed(parser, markdown, sizeof(markdown) - 1);
+
+  cmark_node *doc = cmark_parser_finish(parser);
+  char *xml = cmark_render_xml(doc, options);
+  STR_EQ(runner, xml,
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n"
+    "<document sourcepos=\"1:1-3:7\" xmlns=\"http://commonmark.org/xml/1.0\">\n"
+    "  <paragraph sourcepos=\"1:1-1:13\">\n"
+    "    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| paragraph |</text>\n"
+    "  </paragraph>\n"
+    "  <table sourcepos=\"2:1-3:7\">\n"
+    "    <table_header sourcepos=\"2:1-2:10\">\n"
+    "      <table_cell sourcepos=\"2:2-2:9\">\n"
+    "        <text sourcepos=\"2:3-2:8\" xml:space=\"preserve\">header</text>\n"
+    "      </table_cell>\n"
+    "    </table_header>\n"
+    "  </table>\n"
+    "</document>\n",
+    "sourcepos are as expected");
+  free(xml);
+  cmark_node_free(doc);
+  cmark_parser_free(parser);
+}
+
+
 int main() {
   int retval;
   test_batch_runner *runner = test_batch_runner_new();
@@ -1601,6 +1648,7 @@ int main() {
 
   cmark_gfm_core_extensions_ensure_registered();
   ext_source_pos(runner);
+  ext_source_pos_corners(runner);
   cmark_release_plugins();
 
   test_print_summary(runner);
