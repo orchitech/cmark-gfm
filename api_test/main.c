@@ -6,6 +6,7 @@
 #include "cmark-gfm.h"
 #include "node.h"
 #include "../extensions/cmark-gfm-core-extensions.h"
+#include "registry.h"
 
 #include "harness.h"
 #include "cplusplus.h"
@@ -1035,7 +1036,7 @@ static void source_pos(test_batch_runner *runner) {
                       "  </paragraph>\n"
                       "  <block_quote sourcepos=\"6:1-10:20\">\n"
                       "    <list sourcepos=\"6:3-10:20\" type=\"ordered\" start=\"1\" delim=\"period\" tight=\"false\">\n"
-                        "      <item sourcepos=\"6:3-7:10\">\n"
+                      "      <item sourcepos=\"6:3-7:10\">\n"
                       "        <paragraph sourcepos=\"6:6-7:10\">\n"
                       "          <text sourcepos=\"6:6-6:10\" xml:space=\"preserve\">Okay.</text>\n"
                       "          <softbreak />\n"
@@ -1476,6 +1477,97 @@ static void ref_source_pos(test_batch_runner *runner) {
   cmark_node_free(doc);
 }
 
+static void ext_source_pos(test_batch_runner *runner) {
+  static const char *extensions[3] = {
+    "strikethrough",
+    "table",
+    "autolink",
+  };
+
+  static const char markdown[] =
+    "Hi ~~friend~~ and ~~other\n"
+    "friend~~.\n"
+    "\n"
+    "> www.github.com\n"
+    "\n"
+    "1. | a | b | *c* |\n"
+    "   | - | - | --: |\n"
+    "   | 1 | 2 | ~3~ |\n";
+
+  int options = CMARK_OPT_DEFAULT | CMARK_OPT_SOURCEPOS;
+  cmark_parser *parser = cmark_parser_new(options);
+
+  for (int i = 0; i < (int)(sizeof(extensions) / sizeof(*extensions)); ++i) {
+    cmark_syntax_extension *ext = cmark_find_syntax_extension(extensions[i]);
+    cmark_parser_attach_syntax_extension(parser, ext);
+  }
+
+  cmark_parser_feed(parser, markdown, sizeof(markdown) - 1);
+
+  cmark_node *doc = cmark_parser_finish(parser);
+  char *xml = cmark_render_xml(doc, options);
+  STR_EQ(runner, xml, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                      "<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n"
+                      "<document sourcepos=\"1:1-8:18\" xmlns=\"http://commonmark.org/xml/1.0\">\n"
+                      "  <paragraph sourcepos=\"1:1-2:9\">\n"
+                      "    <text sourcepos=\"1:1-1:3\" xml:space=\"preserve\">Hi </text>\n"
+                      "    <strikethrough sourcepos=\"1:4-1:13\">\n"
+                      "      <text sourcepos=\"1:6-1:11\" xml:space=\"preserve\">friend</text>\n"
+                      "    </strikethrough>\n"
+                      "    <text sourcepos=\"1:14-1:18\" xml:space=\"preserve\"> and </text>\n"
+                      "    <strikethrough sourcepos=\"1:19-2:8\">\n"
+                      "      <text sourcepos=\"1:21-1:25\" xml:space=\"preserve\">other</text>\n"
+                      "      <softbreak />\n"
+                      "      <text sourcepos=\"2:1-2:6\" xml:space=\"preserve\">friend</text>\n"
+                      "    </strikethrough>\n"
+                      "    <text sourcepos=\"2:9-2:9\" xml:space=\"preserve\">.</text>\n"
+                      "  </paragraph>\n"
+                      "  <block_quote sourcepos=\"4:1-4:16\">\n"
+                      "    <paragraph sourcepos=\"4:3-4:16\">\n"
+                      "      <link sourcepos=\"4:2-4:16\" destination=\"http://www.github.com\" title=\"\">\n"
+                      "        <text sourcepos=\"4:2-4:16\" xml:space=\"preserve\">www.github.com</text>\n"
+                      "      </link>\n"
+                      "    </paragraph>\n"
+                      "  </block_quote>\n"
+                      "  <list sourcepos=\"6:1-8:18\" type=\"ordered\" start=\"1\" delim=\"period\" tight=\"true\">\n"
+                      "    <item sourcepos=\"6:1-8:18\">\n"
+                      "      <table sourcepos=\"6:4-8:18\">\n"
+                      "        <table_header sourcepos=\"6:4-6:18\">\n"
+                      "          <table_cell sourcepos=\"6:5-6:7\">\n"
+                      "            <text sourcepos=\"6:6-6:6\" xml:space=\"preserve\">a</text>\n"
+                      "          </table_cell>\n"
+                      "          <table_cell sourcepos=\"6:9-6:11\">\n"
+                      "            <text sourcepos=\"6:10-6:10\" xml:space=\"preserve\">b</text>\n"
+                      "          </table_cell>\n"
+                      "          <table_cell sourcepos=\"6:13-6:17\" align=\"right\">\n"
+                      "            <emph sourcepos=\"6:14-6:16\">\n"
+                      "              <text sourcepos=\"6:15-6:15\" xml:space=\"preserve\">c</text>\n"
+                      "            </emph>\n"
+                      "          </table_cell>\n"
+                      "        </table_header>\n"
+                      "        <table_row sourcepos=\"8:4-8:18\">\n"
+                      "          <table_cell sourcepos=\"8:5-8:7\">\n"
+                      "            <text sourcepos=\"8:6-8:6\" xml:space=\"preserve\">1</text>\n"
+                      "          </table_cell>\n"
+                      "          <table_cell sourcepos=\"8:9-8:11\">\n"
+                      "            <text sourcepos=\"8:10-8:10\" xml:space=\"preserve\">2</text>\n"
+                      "          </table_cell>\n"
+                      "          <table_cell sourcepos=\"8:13-8:17\">\n"
+                      "            <strikethrough sourcepos=\"8:14-8:16\">\n"
+                      "              <text sourcepos=\"8:15-8:15\" xml:space=\"preserve\">3</text>\n"
+                      "            </strikethrough>\n"
+                      "          </table_cell>\n"
+                      "        </table_row>\n"
+                      "      </table>\n"
+                      "    </item>\n"
+                      "  </list>\n"
+                      "</document>\n",
+         "sourcepos are as expected");
+  free(xml);
+  cmark_node_free(doc);
+  cmark_parser_free(parser);
+}
+
 int main() {
   int retval;
   test_batch_runner *runner = test_batch_runner_new();
@@ -1506,6 +1598,10 @@ int main() {
   source_pos(runner);
   source_pos_inlines(runner);
   ref_source_pos(runner);
+
+  cmark_gfm_core_extensions_ensure_registered();
+  ext_source_pos(runner);
+  cmark_release_plugins();
 
   test_print_summary(runner);
   retval = test_ok(runner) ? 0 : 1;
