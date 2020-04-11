@@ -830,11 +830,17 @@ static cmark_node *handle_backslash(cmark_parser *parser, subject *subj) {
     advance(subj);
     return make_str(subj, subj->pos - 2, subj->pos - 1, cmark_chunk_dup(&subj->input, subj->pos - 1, 1));
   } else if (!is_eof(subj) && skip_line_end(subj)) {
+    cmark_node *res = make_linebreak(subj->mem);
+
+    if (parser->options & CMARK_OPT_SOURCEPOS) {
+      res->start_line = subj->line;
+      res->start_column = subj->pos - 1 + subj->column_offset + subj->block_offset;
+      res->end_line = subj->line + 1;
+    }
     // Adjust the subject source position state.
     ++subj->line;
     subj->column_offset = -subj->pos;
-
-    return make_linebreak(subj->mem);
+    return res;
   } else {
     return make_str(subj, subj->pos - 1, subj->pos - 1, cmark_chunk_literal("\\"));
   }
@@ -1241,8 +1247,9 @@ match:
 
 // Parse a hard or soft linebreak, returning an inline.
 // Assumes the subject has a cr or newline at the current position.
-static cmark_node *handle_newline(subject *subj) {
+static cmark_node *handle_newline(subject *subj, int options) {
   bufsize_t nlpos = subj->pos;
+  cmark_node *res;
   // skip over cr, crlf, or lf:
   if (peek_at(subj, subj->pos) == '\r') {
     advance(subj);
@@ -1250,16 +1257,20 @@ static cmark_node *handle_newline(subject *subj) {
   if (peek_at(subj, subj->pos) == '\n') {
     advance(subj);
   }
+  res = nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' && peek_at(subj, nlpos - 2) == ' '
+    ? make_linebreak(subj->mem)
+    : make_softbreak(subj->mem);
+  if (options & CMARK_OPT_SOURCEPOS) {
+    res->start_line = subj->line;
+    res->start_column = nlpos + subj->column_offset + subj->block_offset;
+    res->start_column += res->type == CMARK_NODE_LINEBREAK ? -1 : 1;
+    res->end_line = subj->line + 1;
+  }
   ++subj->line;
   subj->column_offset = -subj->pos;
   // skip spaces at beginning of line
   skip_spaces(subj);
-  if (nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' &&
-      peek_at(subj, nlpos - 2) == ' ') {
-    return make_linebreak(subj->mem);
-  } else {
-    return make_softbreak(subj->mem);
-  }
+  return res;
 }
 
 // "\r\n\\`&_*[]<!"
@@ -1360,7 +1371,7 @@ static int parse_inline(cmark_parser *parser, subject *subj, cmark_node *parent,
   switch (c) {
   case '\r':
   case '\n':
-    new_inl = handle_newline(subj);
+    new_inl = handle_newline(subj, options);
     break;
   case '`':
     new_inl = handle_backticks(subj, options);
