@@ -366,7 +366,7 @@ static cmark_node *try_opening_table_header(cmark_syntax_extension *self,
     cmark_node *paragraph = try_inserting_table_header_paragraph(parser,
       parent_container, (unsigned char *)parent_string, header_row->paragraph_offset);
     if (paragraph) {
-      start_column_offset = header_row->paragraph_offset + 1;
+      start_column_offset = header_row->paragraph_offset;
     }
   }
 
